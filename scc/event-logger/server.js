@@ -13,14 +13,14 @@ const wss = new WebSocket.Server({ server });
 app.use(express.static(path.join(__dirname, "..")));
 
 wss.on("connection", (clientSocket) => {
-  console.log("✅ A new client connected");
+  console.log("Client connected");
 
   const eventTypes = [
-    "User login detected (Simulated)",
-    "⚠️ Login attempt failed (Simulated)",
-    "❌ Error: Unauthorized access attempt (Simulated)",
-    "🔒 Security policy triggered (Simulated)",
-    "👤 New session initialized (Simulated)"
+    "User login detected",
+    "Failed login attempt",
+    "Unauthorized access attempt",
+    "Security policy triggered",
+    "New session initialized"
   ];
 
   const platformMap = {
@@ -51,11 +51,11 @@ wss.on("connection", (clientSocket) => {
 
   clientSocket.on("close", () => {
     clearInterval(streamInterval);
-    console.log("❌ Client disconnected");
+    console.log("Client disconnected");
   });
 });
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
-  console.log(`🚀 Server is running at http://localhost:${PORT}`);
+  console.log(`Server is running at http://localhost:${PORT}`);
 });

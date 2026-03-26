@@ -1,280 +1,158 @@
-const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-const socketUrl = `${wsProtocol}://${window.location.host}`;
+import { scenarioCatalog, generateRandomEvent, manualTemplates } from './data/mockData.js';
+import { evaluateThreatScore, generateAIInsight } from './utils/analyzeThreats.js';
+import { updateRiskGauge, generateEventRow } from './components/uiRenderers.js';
+import { createEventStream } from './services/eventStream.js';
+import { useRiskContext } from './hooks/useRiskContext.js';
 
 const elements = {
+  topStatusText: document.getElementById("topStatusText"),
+  topStatusDot: document.getElementById("topStatusDot"),
+  clock: document.getElementById("clock"),
   eventFeed: document.getElementById("eventFeed"),
-  connectionStatus: document.getElementById("connectionStatus"),
-  connectionPulse: document.getElementById("connectionPulse"),
   eventCount: document.getElementById("eventCount"),
   cpuValue: document.getElementById("cpuValue"),
   cpuBar: document.getElementById("cpuBar"),
   memoryValue: document.getElementById("memoryValue"),
-  memoryBar: document.getElementById("memoryBar"),
-  osValue: document.getElementById("osValue"),
-  threatBadge: document.getElementById("threatBadge"),
+  memBar: document.getElementById("memBar"),
   threatMeter: document.getElementById("threatMeter"),
   meterValue: document.getElementById("meterValue"),
-  shieldValue: document.getElementById("shieldValue"),
+  threatBadge: document.getElementById("threatBadge"),
+  threatBadgePanel: document.getElementById("threatBadgePanel"),
+  activeThreatsCount: document.getElementById("activeThreatsCount"),
   timeline: document.getElementById("timeline"),
   simulateBtn: document.getElementById("simulateBtn"),
   burstBtn: document.getElementById("burstBtn"),
-  manualStatus: document.getElementById("manualStatus"),
-  scenarioChips: document.querySelectorAll('[data-scenario]')
+  manualStatus: document.getElementById("manualStatus")
 };
 
-const connectionThemes = {
-  connecting: { text: "text-amber-200", dot: "bg-amber-200" },
-  live: { text: "text-emerald-300", dot: "bg-emerald-300" },
-  error: { text: "text-rose-300", dot: "bg-rose-400" }
-};
+let totalEvents = 0;
+const riskContext = useRiskContext();
 
-const scenarioCatalog = [
-  { id: "login", keywords: ["login", "credential", "session"], severity: 42 },
-  { id: "policy", keywords: ["policy", "lockdown", "security"], severity: 55 },
-  { id: "insider", keywords: ["insider", "drift", "new session"], severity: 48 },
-  { id: "network", keywords: ["network", "sweep", "beacon", "lateral"], severity: 65 },
-  { id: "breach", keywords: ["unauthorized", "error", "failed"], severity: 78 }
-];
+setInterval(() => {
+  const now = new Date();
+  elements.clock.textContent = now.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+}, 1000);
 
-const manualTemplates = [
-  {
-    scenario: "network",
-    securityEvent: "🌐 East-west lateral sweep detected",
-    baseSeverity: 72
-  },
-  {
-    scenario: "policy",
-    securityEvent: "🔐 Zero-trust policy escalation triggered",
-    baseSeverity: 58
-  },
-  {
-    scenario: "insider",
-    securityEvent: "🧬 Insider drift: anomalous data exfil sequence",
-    baseSeverity: 67
-  },
-  {
-    scenario: "login",
-    securityEvent: "⚡ Credential storm detected across remote gateways",
-    baseSeverity: 61
-  },
-  {
-    scenario: "breach",
-    securityEvent: "🛑 Beacon anomaly suggests command-and-control",
-    baseSeverity: 84
-  }
-];
-
-const state = {
-  totalEvents: 0,
-  lastOperatingSystem: "Windows",
-  reconnectHandle: null,
-  socket: null
-};
-
-function setConnectionState(themeKey, label) {
-  const palette = connectionThemes[themeKey] || connectionThemes.connecting;
-  elements.connectionStatus.textContent = label;
-  elements.connectionStatus.className = `text-sm font-medium ${palette.text}`;
-  elements.connectionPulse.className = `w-2 h-2 rounded-full ${palette.dot} animate-pulse`;
+function updateMeters(cpuNumeric, memNumeric) {
+  elements.cpuValue.textContent = `${cpuNumeric.toFixed(1)}%`;
+  elements.cpuBar.style.width = `${Math.min(100, cpuNumeric)}%`;
+  elements.cpuBar.className = `h-1 transition-all duration-300 shadow-[0_0_10px_currentColor] ${cpuNumeric > 80 ? 'bg-red-500' : cpuNumeric > 50 ? 'bg-amber-500' : 'bg-blue-500'}`;
+  
+  elements.memoryValue.textContent = `${memNumeric.toFixed(0)} MB`;
+  elements.memBar.style.width = `${Math.min(100, (memNumeric/8000)*100)}%`; // Fake 8GB scale
 }
 
-function connectSocket() {
-  clearTimeout(state.reconnectHandle);
-  state.socket?.close?.();
-  setConnectionState("connecting", "Linking to telemetry...");
+function processIncomingEvent(payload) {
+  totalEvents++;
+  elements.eventCount.textContent = totalEvents;
+  
+  const cpuNumeric = parseFloat(payload.cpuUsage.replace('%',''));
+  const memNumeric = parseFloat(payload.freeMemory.replace(' MB',''));
 
-  try {
-    state.socket = new WebSocket(socketUrl);
-  } catch (error) {
-    setConnectionState("error", "WebSocket unavailable");
-    return;
+  updateMeters(cpuNumeric, memNumeric);
+  
+  const threatLevel = evaluateThreatScore(payload.securityEvent, cpuNumeric, scenarioCatalog);
+  const nowStr = new Date().toISOString();
+  
+  const ctxStatus = riskContext.addRiskEvent(threatLevel, nowStr);
+  const aiInsightStr = generateAIInsight(ctxStatus);
+  
+  elements.activeThreatsCount.textContent = ctxStatus.criticals;
+  updateRiskGauge(elements, ctxStatus.score, ctxStatus.criticals);
+  
+  const timeStr = nowStr.substring(11, 19);
+  
+  // Clear placeholder text
+  if (totalEvents === 1) elements.eventFeed.innerHTML = "";
+  
+  // Update UI Elements
+  const row = generateEventRow(payload, timeStr, threatLevel);
+  elements.eventFeed.prepend(row);
+  if (elements.eventFeed.children.length > 30) {
+    elements.eventFeed.removeChild(elements.eventFeed.lastChild);
   }
 
-  state.socket.addEventListener("open", () => {
-    setConnectionState("live", "Live telemetry locked");
-  });
-
-  state.socket.addEventListener("message", (event) => {
-    const payload = JSON.parse(event.data);
-    pushEvent(payload, "live");
-  });
-
-  state.socket.addEventListener("close", () => {
-    setConnectionState("connecting", "Re-linking channel...");
-    state.reconnectHandle = setTimeout(connectSocket, 2000);
-  });
-
-  state.socket.addEventListener("error", () => {
-    setConnectionState("error", "Signal disrupted");
-  });
-}
-
-function pushEvent(payload, source) {
-  state.totalEvents += 1;
-  elements.eventCount.textContent = state.totalEvents;
-  renderEventCard(payload, source);
-  updateStats(payload);
-  const cpuValue = parseFloat(payload.cpuUsage);
-  const threatScore = evaluateThreatScore(payload.securityEvent, cpuValue);
-  updateThreatMeter(threatScore);
-  appendTimeline(payload, source, threatScore);
-  highlightScenario(payload.securityEvent);
-}
-
-function renderEventCard(payload, source) {
-  if (!elements.eventFeed) return;
-
-  const badgeClasses =
-    source === "live"
-      ? "bg-emerald-500/15 border border-emerald-400/40 text-emerald-200"
-      : "bg-fuchsia-500/15 border border-fuchsia-400/40 text-fuchsia-200";
-
-  const card = document.createElement("article");
-  card.className = "feed-card p-4 pop-in";
-  card.innerHTML = `
-    <div class="flex items-center justify-between text-sm text-slate-300">
-      <span>${payload.timestamp}</span>
-      <span class="px-2 py-0.5 rounded-full text-[10px] uppercase tracking-[0.3em] ${badgeClasses}">
-        ${source === "live" ? "LIVE" : "SIM"}
-      </span>
-    </div>
-    <p class="text-lg mt-2 text-white">${payload.securityEvent}</p>
-    <div class="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-400">
-      <span>OS<br><strong class="text-white">${payload.operatingSystem}</strong></span>
-      <span>CPU<br><strong class="text-sky-300">${payload.cpuUsage}</strong></span>
-      <span>Free<br><strong class="text-amber-200">${payload.freeMemory}</strong></span>
-    </div>
-  `;
-
-  elements.eventFeed.querySelector("p")?.remove();
-  elements.eventFeed.prepend(card);
-
-  if (elements.eventFeed.children.length > 15) {
-    elements.eventFeed.removeChild(elements.eventFeed.lastElementChild);
+  // Handle critical timeline
+  if (threatLevel.label === 'CRITICAL') {
+    const alertEntry = document.createElement("li");
+    alertEntry.className = "text-xs px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-md text-slate-300 font-medium";
+    alertEntry.innerHTML = `
+      <div class="flex justify-between items-center mb-1">
+        <span class="text-red-400 font-bold">Severity: ${threatLevel.score}</span>
+        <span class="text-slate-500">${timeStr}</span>
+      </div>
+      <p class="truncate">${payload.securityEvent}</p>
+    `;
+    
+    if (elements.timeline.children[0]?.textContent.includes("No anomalous")) {
+      elements.timeline.innerHTML = "";
+    }
+    
+    elements.timeline.prepend(alertEntry);
+    if (elements.timeline.children.length > 5) {
+      elements.timeline.removeChild(elements.timeline.lastChild);
+    }
   }
 
-  elements.eventFeed.scrollTop = 0;
-}
-
-function updateStats(payload) {
-  const cpuNumeric = parseFloat(payload.cpuUsage) || 0;
-  const memoryNumeric = parseFloat(payload.freeMemory) || 0;
-
-  elements.cpuValue.textContent = payload.cpuUsage;
-  elements.cpuBar.style.width = `${Math.min(100, Math.max(5, cpuNumeric))}%`;
-
-  const normalizedMemory = Math.max(5, Math.min(100, 100 - (memoryNumeric / 16384) * 100));
-  elements.memoryValue.textContent = payload.freeMemory;
-  elements.memoryBar.style.width = `${normalizedMemory}%`;
-
-  state.lastOperatingSystem = payload.operatingSystem || state.lastOperatingSystem;
-  elements.osValue.textContent = state.lastOperatingSystem;
-}
-
-function evaluateThreatScore(eventText, cpuValue) {
-  const lower = eventText.toLowerCase();
-  const scenario = scenarioCatalog.find((item) =>
-    item.keywords.some((keyword) => lower.includes(keyword))
-  );
-  const base = scenario?.severity ?? 32;
-  const computed = base + cpuValue * 0.55;
-  return Math.min(100, Math.round(computed));
-}
-
-function updateThreatMeter(score) {
-  const clamped = Math.min(100, Math.max(0, score));
-  elements.threatMeter.style.setProperty("--value", clamped);
-  elements.meterValue.textContent = `${clamped}%`;
-  const shield = Math.max(0, 100 - Math.round(clamped * 0.75));
-  elements.shieldValue.textContent = `${shield}%`;
-
-  let badge;
-  if (clamped >= 75) {
-    badge = {
-      label: "Critical",
-      classes: "bg-rose-500/20 border border-rose-400/40 text-rose-200"
-    };
-  } else if (clamped >= 50) {
-    badge = {
-      label: "Elevated",
-      classes: "bg-amber-400/15 border border-amber-300/40 text-amber-200"
-    };
+  // AI chip update
+  let manualBlock = elements.manualStatus.parentElement.querySelector('#aiInsight');
+  if (!manualBlock) {
+    manualBlock = document.createElement("span");
+    manualBlock.id = "aiInsight";
+    elements.manualStatus.parentElement.appendChild(manualBlock);
+  }
+  
+  if (ctxStatus.criticals > 3) {
+    manualBlock.className = "text-xs text-amber-400 font-medium blink-critical ml-auto border border-amber-500/20 bg-amber-500/10 px-3 py-2 rounded-md";
+    manualBlock.textContent = `AI: ${aiInsightStr}`;
   } else {
-    badge = {
-      label: "Stable",
-      classes: "bg-emerald-500/15 border border-emerald-300/40 text-emerald-200"
-    };
-  }
-
-  elements.threatBadge.textContent = badge.label;
-  elements.threatBadge.className = `px-3 py-1 rounded-full text-xs font-semibold tracking-wide ${badge.classes}`;
-}
-
-function appendTimeline(payload, source, score) {
-  const descriptor = document.createElement("li");
-  descriptor.className = "flex items-center justify-between gap-4 border-b border-white/10 pb-2 last:border-none";
-
-  const statusClass = score >= 75 ? "text-rose-300" : score >= 50 ? "text-amber-300" : "text-emerald-300";
-  descriptor.innerHTML = `
-    <div>
-      <p class="font-medium">${payload.securityEvent}</p>
-      <span class="text-xs text-slate-500">${payload.timestamp} • ${source === "live" ? "Live feed" : "Manual sim"}</span>
-    </div>
-    <span class="${statusClass} font-semibold">${payload.cpuUsage}</span>
-  `;
-
-  elements.timeline.querySelector("li.text-slate-500")?.remove();
-  elements.timeline.prepend(descriptor);
-  while (elements.timeline.children.length > 6) {
-    elements.timeline.removeChild(elements.timeline.lastElementChild);
+    manualBlock.className = "hidden";
   }
 }
 
-function highlightScenario(eventText) {
-  const lower = eventText.toLowerCase();
-  const scenario = scenarioCatalog.find((item) =>
-    item.keywords.some((keyword) => lower.includes(keyword))
-  );
+// Start Stream
+const eventStream = createEventStream(processIncomingEvent, 1500, 3500);
+eventStream.start();
 
-  elements.scenarioChips.forEach((chip) => {
-    chip.classList.toggle("active", scenario?.id === chip.dataset.scenario);
+// Controls
+elements.simulateBtn.addEventListener('click', () => {
+  const t = manualTemplates[Math.floor(Math.random() * manualTemplates.length)];
+  const cpu = Math.min(99, t.baseSeverity + Math.random() * 15);
+  const mem = 1024 + Math.random() * 4000;
+  
+  eventStream.inject({
+    timestamp: new Date().toISOString(),
+    operatingSystem: "Linux",
+    cpuUsage: `${cpu.toFixed(1)}%`,
+    freeMemory: `${mem.toFixed(0)} MB`,
+    securityEvent: t.securityEvent
   });
-}
+  
+  elements.manualStatus.textContent = "Event injected.";
+  setTimeout(()=> elements.manualStatus.textContent="Console idle", 2000);
+});
 
-function generateManualEvent() {
-  const template = manualTemplates[Math.floor(Math.random() * manualTemplates.length)];
-  const cpu = Math.min(99, template.baseSeverity + Math.random() * 15);
-  const memory = (420 + Math.random() * 480).toFixed(2);
-
-  return {
-    timestamp: new Date().toLocaleString(),
-    operatingSystem: state.lastOperatingSystem,
-    cpuUsage: `${cpu.toFixed(2)}%`,
-    freeMemory: `${memory} MB`,
-    securityEvent: template.securityEvent
-  };
-}
-
-function wireControls() {
-  elements.simulateBtn?.addEventListener("click", () => {
-    pushEvent(generateManualEvent(), "manual");
-    elements.manualStatus.textContent = "Single spike injected.";
-    elements.manualStatus.classList.add("text-fuchsia-200");
-  });
-
-  elements.burstBtn?.addEventListener("click", () => {
-    elements.manualStatus.textContent = "Burst drill executing...";
-    const wave = Array.from({ length: 4 });
-    wave.forEach((_, index) => {
-      setTimeout(() => {
-        pushEvent(generateManualEvent(), "manual");
-        if (index === wave.length - 1) {
-          elements.manualStatus.textContent = "Burst completed.";
-        }
-      }, index * 450);
+elements.burstBtn.addEventListener('click', () => {
+  elements.manualStatus.textContent = "Injecting burst...";
+  let count = 0;
+  const iv = setInterval(() => {
+    const t = manualTemplates[Math.floor(Math.random() * manualTemplates.length)];
+    const cpu = Math.min(99, t.baseSeverity + Math.random() * 15);
+    const mem = 1024 + Math.random() * 4000;
+    
+    eventStream.inject({
+      timestamp: new Date().toISOString(),
+      operatingSystem: "Linux",
+      cpuUsage: `${cpu.toFixed(1)}%`,
+      freeMemory: `${mem.toFixed(0)} MB`,
+      securityEvent: t.securityEvent
     });
-  });
-}
-
-wireControls();
-connectSocket();
+    
+    count++;
+    if (count > 4) {
+      clearInterval(iv);
+      elements.manualStatus.textContent = "Burst complete.";
+      setTimeout(()=> elements.manualStatus.textContent="Console idle", 2000);
+    }
+  }, 250);
+});

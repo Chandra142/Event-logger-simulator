@@ -1,276 +1,311 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Real-Time OS Security Event Logger</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Security Operations Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    
+    :root {
+      --bg-base: #020617; /* Slate 950 */
+      --bg-panel: rgba(15, 23, 42, 0.6); /* Slate 900 */
+      --border-panel: rgba(30, 41, 59, 0.5); /* Slate 800 */
+      --text-muted: #94a3b8; /* Slate 400 */
+      
+      --glow-normal: 0 0 15px rgba(16, 185, 129, 0.2);
+      --glow-warning: 0 0 15px rgba(245, 158, 11, 0.2);
+      --glow-critical: 0 0 15px rgba(239, 68, 68, 0.2);
+      --glow-info: 0 0 15px rgba(59, 130, 246, 0.2);
+    }
 
     body {
-      font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
-      background-color: #020617;
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-base);
+      color: #f8fafc;
+      overflow: hidden; /* App-like layout */
     }
 
-    .glow-text {
-      text-shadow: 0 0 14px rgba(96, 165, 250, 0.45);
-    }
-
-    .glass {
-      background: rgba(15, 23, 42, 0.72);
-      border: 1px solid rgba(148, 163, 184, 0.25);
-      box-shadow: 0 20px 45px rgba(2, 6, 23, 0.55);
-      backdrop-filter: blur(14px);
-      border-radius: 1.5rem;
-    }
-
-    .stat-card {
-      position: relative;
-      overflow: hidden;
-    }
-
-    .stat-card::after {
-      content: "";
+    /* Background noise/grid */
+    body::before {
+      content: '';
       position: absolute;
       inset: 0;
-      background: radial-gradient(circle at top, rgba(59, 130, 246, 0.18), transparent 55%);
-      opacity: 0.6;
+      background: 
+        linear-gradient(rgba(30, 41, 59, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(30, 41, 59, 0.05) 1px, transparent 1px);
+      background-size: 40px 40px;
+      z-index: -1;
       pointer-events: none;
     }
 
-    .grid-overlay {
-      background-image: linear-gradient(rgba(148, 163, 184, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(148, 163, 184, 0.1) 1px, transparent 1px);
-      background-size: 120px 120px;
-      position: absolute;
-      inset: 0;
-      opacity: 0.15;
-      pointer-events: none;
+    .glass-panel {
+      background: var(--bg-panel);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-panel);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+      border-radius: 0.75rem; /* lg */
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
     }
 
-    .aurora {
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(circle at 20% 20%, rgba(59, 130, 246, 0.45), transparent 45%), radial-gradient(circle at 80% 0%, rgba(14, 165, 233, 0.35), transparent 40%), radial-gradient(circle at 10% 80%, rgba(217, 70, 239, 0.4), transparent 40%);
-      filter: blur(30px);
-      opacity: 0.55;
-      pointer-events: none;
+    .glass-panel:hover {
+      border-color: rgba(71, 85, 105, 0.3);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     }
 
-    @keyframes popIn {
-      0% {
-        transform: translateY(8px);
-        opacity: 0;
-      }
-
-      100% {
-        transform: translateY(0);
-        opacity: 1;
-      }
+    .scrollbar-hide::-webkit-scrollbar {
+      display: none;
     }
-
-    .pop-in {
-      animation: popIn 0.35s ease-out forwards;
-    }
-
-    ::-webkit-scrollbar {
+    
+    .scrollbar-dark::-webkit-scrollbar {
       width: 6px;
     }
-
-    ::-webkit-scrollbar-thumb {
-      background-color: #475569;
-      border-radius: 999px;
-    }
-
-    ::-webkit-scrollbar-track {
+    .scrollbar-dark::-webkit-scrollbar-track {
       background: transparent;
     }
-
-    .bar-track {
-      background: rgba(148, 163, 184, 0.15);
-      height: 6px;
-      border-radius: 999px;
-      overflow: hidden;
+    .scrollbar-dark::-webkit-scrollbar-thumb {
+      background-color: #334155;
+      border-radius: 10px;
     }
 
-    .bar-fill {
-      height: 100%;
-      border-radius: 999px;
-      transition: width 0.4s ease;
+    /* Glows */
+    .glow-accent { text-shadow: var(--glow-info); }
+    .glow-border-normal { box-shadow: var(--glow-normal); border-color: rgba(16, 185, 129, 0.3); }
+    .glow-border-warning { box-shadow: var(--glow-warning); border-color: rgba(245, 158, 11, 0.3); }
+    .glow-border-critical { box-shadow: var(--glow-critical); border-color: rgba(239, 68, 68, 0.3); }
+
+    .blink-critical { animation: blink 1.5s infinite; }
+    @keyframes blink {
+      0%, 100% { opacity: 1; text-shadow: 0 0 10px rgba(239, 68, 68, 0.8); }
+      50% { opacity: 0.5; text-shadow: none; }
     }
 
-    .threat-meter {
-      --value: 24;
-      width: 180px;
-      height: 180px;
-      border-radius: 999px;
-      background: conic-gradient(#f472b6 calc(var(--value) * 1%), rgba(15, 23, 42, 0.7) 0);
-      display: grid;
-      place-items: center;
-      border: 2px solid rgba(248, 113, 113, 0.35);
+    .event-enter-active {
+      animation: slideIn 0.3s ease-out forwards;
     }
 
-    .threat-meter::after {
-      content: "";
-      width: 68%;
-      height: 68%;
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(-10px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    
+    /* Radial gauge */
+    .gauge {
       border-radius: 50%;
-      background: #0f172a;
-      border: 1px solid rgba(248, 250, 252, 0.08);
+      background: conic-gradient(var(--bg-color) calc(var(--val) * 1%), #1e293b 0);
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-
-    .meter-core {
-      position: absolute;
-      text-align: center;
-    }
-
-    .scenario-chip {
-      border-radius: 999px;
-      border: 1px solid rgba(148, 163, 184, 0.4);
-      padding: 0.3rem 0.9rem;
-      font-size: 0.85rem;
-      transition: all 0.25s ease;
-      cursor: pointer;
-    }
-
-    .scenario-chip.active {
-      background: rgba(217, 70, 239, 0.18);
-      border-color: rgba(217, 70, 239, 0.6);
-      color: #f9a8d4;
-      box-shadow: 0 0 25px rgba(217, 70, 239, 0.35);
-    }
-
-    .feed-card {
-      border-radius: 1rem;
-      border: 1px solid rgba(148, 163, 184, 0.2);
-      background: rgba(15, 23, 42, 0.85);
+    .gauge-inner {
+      width: 82%;
+      height: 82%;
+      border-radius: 50%;
+      background-color: var(--bg-base);
     }
   </style>
 </head>
+<body class="flex h-screen text-slate-100 antialiased selection:bg-blue-500/30">
 
-<body class="relative min-h-screen overflow-hidden text-white">
-  <div class="aurora"></div>
-  <div class="grid-overlay"></div>
+  <!-- Sidebar -->
+  <aside class="w-20 lg:w-64 glass-panel rounded-none border-y-0 border-l-0 flex flex-col justify-between z-20 shrink-0 relative bg-[#020617]/90 transition-all duration-300">
+    <div class="p-4 lg:p-6">
+      <div class="flex items-center gap-3 mb-10 overflow-hidden">
+        <div class="w-8 h-8 rounded-lg bg-blue-600 shadow-[0_0_15px_rgba(37,99,235,0.5)] flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"></path></svg>
+        </div>
+        <span class="font-bold text-lg hidden lg:block tracking-wide whitespace-nowrap text-slate-100">SecureOps</span>
+      </div>
 
-  <main class="relative z-10 w-full max-w-6xl mx-auto py-10 px-6 flex flex-col gap-8">
-    <header class="text-center flex flex-col gap-3">
-      <p class="text-sm uppercase tracking-[0.4em] text-slate-400">Adaptive Security Simulator</p>
-      <h1 class="text-4xl md:text-5xl font-semibold glow-text">Real-Time OS Security Event Logger</h1>
-      <p class="text-slate-300 max-w-3xl mx-auto">
-        Watch synthetic attacks stream in, track CPU stress, and orchestrate your own chaos drills with the control
-        surface below.
-      </p>
-      <div class="flex flex-wrap items-center justify-center gap-3 text-sm">
-        <span id="connectionPulse" class="w-2 h-2 rounded-full bg-yellow-200 animate-pulse"></span>
-        <span id="connectionStatus" class="text-yellow-200 font-medium">Linking to telemetry...</span>
-        <span class="text-slate-400">Events tracked: <span id="eventCount"
-            class="text-sky-300 font-semibold">0</span></span>
+      <nav class="space-y-2">
+        <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 shadow-[0_0_10px_rgba(59,130,246,0.1)] transition-colors group">
+          <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+          <span class="font-medium hidden lg:block text-sm">Dashboard</span>
+        </a>
+        <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-800/50 text-slate-400 hover:text-slate-200 transition-colors group">
+          <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+          <span class="font-medium hidden lg:block text-sm">Alerts</span>
+        </a>
+        <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-800/50 text-slate-400 hover:text-slate-200 transition-colors group">
+          <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+          <span class="font-medium hidden lg:block text-sm">Logs</span>
+        </a>
+        <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-800/50 text-slate-400 hover:text-slate-200 transition-colors group">
+          <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+          <span class="font-medium hidden lg:block text-sm">Network</span>
+        </a>
+        <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-800/50 text-slate-400 hover:text-slate-200 transition-colors group">
+          <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+          <span class="font-medium hidden lg:block text-sm">Users</span>
+        </a>
+        <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-800/50 text-slate-400 hover:text-slate-200 transition-colors group">
+          <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+          <span class="font-medium hidden lg:block text-sm">Settings</span>
+        </a>
+      </nav>
+    </div>
+    
+    <div class="p-4 lg:p-6 border-t border-slate-800/50">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 shrink-0"></div>
+        <div class="hidden lg:block">
+          <p class="text-sm font-medium text-slate-200">Admin User</p>
+          <p class="text-xs text-slate-500">Tier 3 Analyst</p>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main view -->
+  <div class="flex-1 flex flex-col overflow-hidden relative w-full">
+    
+    <!-- Top Bar -->
+    <header class="h-16 shrink-0 border-b border-soc-border bg-[#020617]/80 backdrop-blur-xl flex items-center justify-between px-4 lg:px-8 z-10 sticky top-0 shadow-sm border-slate-800">
+      <div class="flex items-center gap-4">
+        <h1 class="text-[1.05rem] lg:text-lg font-bold tracking-wide text-slate-100 glow-accent shrink-0">Security Operations Dashboard</h1>
+        
+        <div class="hidden sm:block h-4 w-px bg-slate-700 mx-2"></div>
+        
+        <div class="hidden sm:flex items-center gap-2">
+          <span id="topStatusDot" class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)] animate-pulse shrink-0"></span>
+          <span id="topStatusText" class="text-xs font-semibold uppercase tracking-wider text-emerald-400">System Normal</span>
+        </div>
+      </div>
+      <div class="flex items-center gap-4 text-xs font-medium text-slate-400 shrink-0">
+        <span id="clock" class="tracking-widest font-mono">00:00:00 UTC</span>
       </div>
     </header>
 
-    <section class="grid gap-5 md:grid-cols-3">
-      <article class="glass stat-card p-6 space-y-3">
-        <div class="flex items-center justify-between">
-          <p class="text-sm uppercase tracking-widest text-slate-400">CPU Load</p>
-          <span class="text-xs text-slate-500">Live</span>
-        </div>
-        <h3 id="cpuValue" class="text-3xl font-semibold">--%</h3>
-        <div class="bar-track">
-          <span id="cpuBar" class="bar-fill bg-sky-400/80" style="width: 12%;"></span>
-        </div>
-      </article>
-
-      <article class="glass stat-card p-6 space-y-3">
-        <div class="flex items-center justify-between">
-          <p class="text-sm uppercase tracking-widest text-slate-400">Avail. Memory</p>
-          <span class="text-xs text-slate-500">MB</span>
-        </div>
-        <h3 id="memoryValue" class="text-3xl font-semibold">-- MB</h3>
-        <div class="bar-track">
-          <span id="memoryBar" class="bar-fill bg-amber-400/80" style="width: 22%;"></span>
-        </div>
-      </article>
-
-      <article class="glass stat-card p-6 space-y-4">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-sm uppercase tracking-[0.4em] text-slate-400">Platform</p>
-            <h3 id="osValue" class="text-2xl font-semibold">--</h3>
-          </div>
-          <span id="threatBadge"
-            class="px-3 py-1 rounded-full text-xs bg-slate-700/80 border border-slate-500/50">Calibrating</span>
-        </div>
-        <p class="text-sm text-slate-400">Threat state blends live severity with compute stress to simulate SOC urgency.
-        </p>
-      </article>
-    </section>
-
-    <section class="grid gap-6 lg:grid-cols-3">
-      <article class="glass lg:col-span-2 p-6 flex flex-col gap-4 h-[520px]">
-        <div class="flex items-center justify-between">
-          <h2 class="text-xl font-semibold">Live Event Feed</h2>
-          <span class="text-xs uppercase tracking-[0.3em] text-slate-400">Auto-scroll</span>
-        </div>
-        <div id="eventFeed" class="space-y-4 overflow-y-auto pr-2">
-          <p class="text-slate-500">Awaiting first telemetry packet...</p>
-        </div>
-      </article>
-
-      <div class="flex flex-col gap-6">
-        <article class="glass p-6 flex flex-col items-center gap-4">
-          <p class="text-sm uppercase tracking-[0.4em] text-slate-400">Threat Meter</p>
-          <div class="relative flex items-center justify-center">
-            <div id="threatMeter" class="threat-meter"></div>
-            <div class="meter-core">
-              <p id="meterValue" class="text-4xl font-semibold">0%</p>
-              <p class="text-xs uppercase tracking-widest text-slate-400">Load</p>
+    <!-- Scrollable content inside Main -->
+    <main class="flex-1 overflow-y-auto overflow-x-hidden scrollbar-dark p-4 lg:p-8">
+      <div class="max-w-[1600px] mx-auto space-y-6 flex flex-col h-full min-h-max">
+        
+        <!-- Top Row (Metrics) -> 4 Columns -->
+        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div class="glass-panel p-5 flex flex-col justify-between group">
+            <div class="flex justify-between items-start mb-2">
+              <span class="text-xs uppercase tracking-widest text-slate-400 font-semibold group-hover:text-slate-300 transition-colors">Active Threats</span>
+              <svg class="w-4 h-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+            </div>
+            <div class="flex items-baseline gap-2 mt-2">
+              <span id="activeThreatsCount" class="text-3xl font-bold text-slate-100">0</span>
+              <span class="text-xs text-rose-400/80 font-medium">pending</span>
             </div>
           </div>
-          <p class="text-sm text-slate-300 text-center">Meter derives from latest alert severity, CPU drag, and
-            simulated analyst confidence.</p>
-          <div class="flex items-center gap-3 text-sm">
-            <span class="text-slate-400">Shield Integrity</span>
-            <span id="shieldValue" class="text-lg font-semibold text-emerald-300">100%</span>
+          
+          <div class="glass-panel p-5 flex flex-col justify-between group">
+            <div class="flex justify-between items-start mb-2">
+              <span class="text-xs uppercase tracking-widest text-slate-400 font-semibold group-hover:text-slate-300 transition-colors">CPU Load</span>
+              <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
+            </div>
+            <div class="flex items-baseline gap-2 mt-2">
+              <span id="cpuValue" class="text-3xl font-bold text-slate-100">--%</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-1 mt-3 overflow-hidden">
+              <div id="cpuBar" class="bg-blue-500 h-1 transition-all duration-300 w-0 shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>
+            </div>
           </div>
-        </article>
 
-        <article class="glass p-6">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold">Pulse Timeline</h3>
-            <span class="text-xs text-slate-400">Last 6</span>
+          <div class="glass-panel p-5 flex flex-col justify-between group">
+            <div class="flex justify-between items-start mb-2">
+              <span class="text-xs uppercase tracking-widest text-slate-400 font-semibold group-hover:text-slate-300 transition-colors">Mem Usage</span>
+              <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+            </div>
+            <div class="flex items-baseline gap-2 mt-2">
+              <span id="memoryValue" class="text-3xl font-bold text-slate-100">--</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-1 mt-3 overflow-hidden">
+              <div id="memBar" class="bg-amber-500 h-1 transition-all duration-300 w-0 shadow-[0_0_10px_rgba(245,158,11,0.8)]"></div>
+            </div>
           </div>
-          <ul id="timeline" class="space-y-3 text-sm">
-            <li class="text-slate-500">Telemetry timeline populates as soon as events arrive.</li>
-          </ul>
-        </article>
-      </div>
-    </section>
 
-    <section class="glass p-6 space-y-5">
-      <div class="flex flex-col gap-2">
-        <h2 class="text-xl font-semibold">Scenario Console</h2>
-        <p class="text-slate-300">Inject your own threat waves to stress-test the visualization layer. Each burst spawns
-          richer narrative events.</p>
-      </div>
-      <div class="flex flex-wrap gap-3">
-        <button id="simulateBtn"
-          class="px-6 py-3 rounded-full bg-fuchsia-600/80 hover:bg-fuchsia-500 transition font-semibold">Simulate
-          Spike</button>
-        <button id="burstBtn"
-          class="px-6 py-3 rounded-full bg-sky-600/80 hover:bg-sky-500 transition font-semibold">Launch Burst</button>
-        <span id="manualStatus" class="text-sm text-slate-400 self-center">No manual drills yet.</span>
-      </div>
-      <div id="scenarioChips" class="flex flex-wrap gap-3 text-sm">
-        <span class="scenario-chip" data-scenario="login">Credential Storm</span>
-        <span class="scenario-chip" data-scenario="policy">Policy Lockdown</span>
-        <span class="scenario-chip" data-scenario="insider">Insider Drift</span>
-        <span class="scenario-chip" data-scenario="network">East-West Sweep</span>
-      </div>
-    </section>
-  </main>
+          <div class="glass-panel p-5 flex flex-col justify-between group">
+            <div class="flex justify-between items-start mb-2">
+              <span class="text-xs uppercase tracking-widest text-slate-400 font-semibold group-hover:text-slate-300 transition-colors">Events Processed</span>
+              <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            </div>
+            <div class="flex items-baseline gap-2 mt-2">
+              <span id="eventCount" class="text-3xl font-bold text-slate-100">0</span>
+              <span class="text-xs text-slate-500 font-medium">total</span>
+            </div>
+          </div>
+        </section>
 
-  <script src="script.js" defer></script>
+        <!-- Middle Row (Main Feed + Risk Score) -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 min-h-[400px]">
+          <!-- Event Feed (Left side 8 cols) -->
+          <article class="glass-panel lg:col-span-8 flex flex-col overflow-hidden h-full">
+            <div class="px-5 py-4 border-b border-slate-800/80 flex items-center justify-between shrink-0 bg-[#060b18]/60">
+              <div class="flex border border-slate-700/50 rounded-lg overflow-hidden shrink-0">
+                <button class="px-4 py-1.5 bg-blue-500/20 text-blue-400 text-xs font-semibold focus:outline-none">Live Stream</button>
+                <button class="px-4 py-1.5 bg-slate-800/20 hover:bg-slate-700/50 text-slate-400 text-xs font-medium transition-colors focus:outline-none">Audit Logs</button>
+              </div>
+              <span class="text-[10px] uppercase font-bold tracking-[0.2em] text-slate-500 flex items-center gap-2"><div class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div> Connected</span>
+            </div>
+            <div class="flex-1 overflow-hidden relative bg-[#01040f]/60">
+              <div id="eventFeed" class="absolute inset-0 overflow-y-auto scrollbar-dark space-y-0.5 p-2">
+                <!-- Awaiting data state -->
+                <div class="flex items-center justify-center h-full text-slate-600 text-sm italic font-mono">
+                  Awaiting telemetry from endpoint...
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <!-- Risk Score Panel (Right side 4 cols) -->
+          <article class="glass-panel lg:col-span-4 p-8 flex flex-col items-center justify-center relative overflow-hidden group h-full">
+            <!-- Subtle background aura -->
+            <div class="absolute top-0 right-0 w-32 h-32 bg-slate-500/5 rounded-full blur-[60px] group-hover:bg-slate-500/10 transition-colors pointer-events-none"></div>
+            
+            <h2 class="text-sm uppercase tracking-widest text-slate-400 font-semibold mb-8 z-10 shrink-0">Global Risk Profile</h2>
+            
+            <div class="relative w-48 h-48 sm:w-56 sm:h-56 mb-8 z-10 drop-shadow-xl shrink-0">
+              <div id="threatMeter" class="w-full h-full gauge transition-all duration-[800ms] ease-[cubic-bezier(0.4,0,0.2,1)] shadow-[inset_0_0_20px_rgba(0,0,0,0.4)]" style="--val: 0; --bg-color: #10b981;">
+                <div class="gauge-inner flex flex-col items-center justify-center bg-[#020617]/95 border border-slate-800/80 shadow-[0_0_15px_rgba(0,0,0,0.4)] backdrop-blur">
+                  <span id="meterValue" class="text-5xl sm:text-6xl font-bold tracking-tighter text-slate-100">0</span>
+                  <span class="text-[10px] uppercase text-slate-500 font-bold tracking-widest mt-1">Score</span>
+                </div>
+              </div>
+            </div>
+            
+            <div id="threatBadgePanel" class="w-full bg-slate-800/40 rounded-xl p-4 border border-slate-700/50 flex flex-col items-center gap-1.5 z-10 transition-all duration-300 mt-auto shrink-0">
+              <span id="threatBadge" class="text-[1.05rem] font-bold text-emerald-400 tracking-wider uppercase">Normal</span>
+              <span class="text-xs text-slate-400 text-center font-medium">Telemetry limits acceptable</span>
+            </div>
+          </article>
+        </section>
+
+        <!-- Bottom Row (Simulation / Alerts) -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <article class="glass-panel lg:col-span-8 p-6 flex flex-col">
+            <h3 class="text-sm uppercase tracking-widest text-slate-400 font-semibold border-b border-slate-800/80 pb-3 mb-4 flex items-center justify-between">
+              Threat Simulation Console
+              <span id="manualStatus" class="text-xs text-slate-500 font-medium">Console idle</span>
+            </h3>
+            <div class="flex flex-col sm:flex-row gap-3 items-center">
+              <button id="simulateBtn" class="bg-[#1e1b4b] hover:bg-[#312e81] border border-indigo-500/30 text-indigo-300 transition-all px-5 py-2.5 rounded-lg text-sm font-semibold shadow-[0_0_10px_rgba(67,56,202,0.2)] hover:shadow-[0_0_15px_rgba(67,56,202,0.5)] w-full sm:w-auto">
+                Inject Single Event
+              </button>
+              <button id="burstBtn" class="bg-[#4c0519] hover:bg-[#881337] border border-rose-500/30 text-rose-300 transition-all px-5 py-2.5 rounded-lg text-sm font-semibold shadow-[0_0_10px_rgba(225,29,72,0.2)] hover:shadow-[0_0_15px_rgba(225,29,72,0.5)] w-full sm:w-auto">
+                Trigger Breach Burst
+              </button>
+              
+            </div>
+          </article>
+
+          <article class="glass-panel lg:col-span-4 p-6 flex flex-col max-h-[160px]">
+            <h3 class="text-sm uppercase tracking-widest text-slate-400 font-semibold border-b border-slate-800/80 pb-3 mb-3 shrink-0">Critical Alerts</h3>
+            <ul id="timeline" class="space-y-2 flex-1 overflow-y-auto scrollbar-dark pr-2">
+              <li class="text-xs text-slate-500 italic p-1">No anomalous behavior detected recently.</li>
+            </ul>
+          </article>
+        </section>
+
+      </div>
+    </main>
+  </div>
+  
+  <script type="module" src="script.js"></script>
 </body>
-
 </html>
