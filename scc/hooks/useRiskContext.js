@@ -10,19 +10,27 @@ export function useRiskContext() {
       history.shift();
     }
     
-    let score = 0;
+    let totalScore = 0;
     let criticals = 0;
     
+    // Weights: CRITICAL=40, WARNING=15, INFO=2
     history.forEach(h => {
-      if (h.threatLevel.label === 'CRITICAL') { score += 25; criticals++; }
-      else if (h.threatLevel.label === 'WARNING') score += 10;
-      else if (h.threatLevel.label === 'INFO') score += 1;
+      if (h.threatLevel.label === 'CRITICAL') { 
+        totalScore += 40; 
+        criticals++; 
+      } else if (h.threatLevel.label === 'WARNING') {
+        totalScore += 15;
+      } else if (h.threatLevel.label === 'INFO') {
+        totalScore += 2;
+      }
     });
 
+    const finalScore = Math.min(100, Math.round(totalScore));
+
     return {
-      score: Math.min(100, score),
+      score: finalScore,
       criticals,
-      highLoad: history.length > 0 && Math.random() > 0.5 // Simulated load heuristic
+      history: [...history] // Pass a copy for AI logic
     };
   };
 
